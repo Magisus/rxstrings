@@ -8,7 +8,8 @@ require 'parser/current'
 
 module RXStrings
   #
-  # Extract innermost node contents
+  # Extract innermost node contents.
+  # @return Node or nil value.
   #
   def self.get_inner(node)
     while node.class.to_s == 'Parser::AST::Node'
@@ -32,7 +33,8 @@ module RXStrings
   private_class_method :get_inner
 
   #
-  # Extract and flatten multi-segment strings
+  # Extract and flatten multi-segment strings.
+  # @return String or Node if non-string value.
   #
   def self.get_str(node)
     if node.class.to_s == 'Parser::AST::Node'
@@ -60,7 +62,7 @@ module RXStrings
   private_class_method :get_str
   
   #
-  # Check/display string
+  # Check/output string.
   #
   def self.check_str(str, path, opts, op)
     return if str !~ /[A-Za-z]/ # ignore non-text string
@@ -96,15 +98,15 @@ module RXStrings
     if opts['umark']
       opts['err'].("#{path}: unmarked string `#{pstr}'") unless marked
     elsif opts['mark']
-      opts['out'].("#{path}: #{op}() marked string `#{pstr}'") if marked
-    elsif !stats
+      opts['out'].("#{path}: #{pstr}") if marked
+    elsif opts['show']
       opts['out'].("#{path}:#{pstr}")
     end
   end
   private_class_method :check_str
 
   #
-  # Parse syntax tree
+  # Parse syntax tree.
   #
   def self.parse_tree(node, path, opts)
     op = nil
@@ -125,7 +127,7 @@ module RXStrings
   private_class_method :parse_tree
   
   #
-  # Output syntax tree
+  # Output syntax tree.
   #
   def self.show_tree(node, opts, depth = 0)
     indent = ' ' * depth
@@ -151,7 +153,7 @@ module RXStrings
   private_class_method :show_tree
   
   #
-  # Parse file
+  # Parse file.
   #
   def self.parse(path, opts = {})
     opts['out'] = lambda {|msg| puts "#{msg}"} unless opts['out']
@@ -184,7 +186,8 @@ module RXStrings
   end
 
   #
-  # Output statistics
+  # Output statistics.
+  # @return Number of unmarked strings.
   #
   def self.stats(opts)
     return 0 if !opts['stats']
@@ -211,7 +214,9 @@ module RXStrings
       end
     end
 
-    opts['out'].("#{inst} instances (#{umark} unmarked), #{strs} strings (#{multi} multi), #{files.size} files")
+    opts['out'].("#{inst} strings (#{umark} unmarked)" +
+                 ", #{strs} unique strings (#{multi} multi-part)" +
+                 ", #{files.size} files")
 
     return umark
   end
@@ -227,6 +232,7 @@ end
 opts = {
   'out' => lambda {|msg| puts "#{ME}: #{msg}"},
   'err' => lambda {|msg| STDERR.puts "#{ME}: #{msg}"},
+  'stats' => Hash.new,
 }
 while ARGV[0] =~ /^-/
   opt = ARGV.shift
@@ -237,8 +243,8 @@ while ARGV[0] =~ /^-/
     opts['umark'] = true
   when /^(-m|--mark)$/
     opts['mark'] = true
-  when /^(-s|--stats)$/
-    opts['stats'] = Hash.new()
+  when /^(-s|--show)$/
+    opts['show'] = true
   when /^(-d|--debug)$/
     opts['debug'] = true
     opts['out'] = lambda {|msg| puts msg}
@@ -250,7 +256,7 @@ while ARGV[0] =~ /^-/
     puts " Options:"
     puts "  -u|--umark  Show unmarked strings."
     puts "  -m|--mark   Show marked strings."
-    puts "  -s|--stats  Show string statistics."
+    puts "  -s|--show   Show all strings."
     puts "  -d|--debug  Show parse tree."
     puts "  -h|--help   Show help text."
     exit 1
@@ -266,4 +272,7 @@ ARGV.each do |path|
     exit 1
   end
 end
-exit RXStrings::stats(opts) ? 1:0
+
+exit 1 if RXStrings::stats(opts) > 0
+
+exit 0
