@@ -4,8 +4,10 @@ A simple tool to recursively parse a Ruby source code tree, extract strings
 statistics.
 
 Usage: `rxstrings` [OPTIONS] [FILE ...] [DIRECTORY ...]
-* -u|--umark  Show unmarked strings.
-* -m|--mark   Show marked strings.
-* -s|--show   Show all strings.
-* -d|--debug  Show parse tree.
-* -h|--help   Show help text.
+* -u|--umark         Show unmarked strings
+* -m|--mark          Show marked strings
+* -a|--all           Show all strings
+* -f|--file-stats    Show per-file statistics
+* -s|--string-stats  Show per-string statistics
+* -d|--debug         Show parse tree
+* -h|--help          Show help text

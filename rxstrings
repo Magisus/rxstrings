@@ -65,6 +65,7 @@ module RXStrings
   # Check/output string.
   #
   def self.check_str(str, path, opts, op)
+    # heuristics to ignore non-user-visible strings
     return if str !~ /[A-Za-z]/ # ignore non-text string
     return if str == '(string)' # special case for parser peculiarity
     return if op =~ /^(require|new)$/ # ignore require & new statements
@@ -99,7 +100,7 @@ module RXStrings
       opts['err'].("#{path}: unmarked string `#{pstr}'") unless marked
     elsif opts['mark']
       opts['out'].("#{path}: #{pstr}") if marked
-    elsif opts['show']
+    elsif opts['all']
       opts['out'].("#{path}:#{pstr}")
     end
   end
@@ -194,12 +195,14 @@ module RXStrings
 
     inst = 0
     umark = 0
-    strs = 0
+    unique = 0
     multi = 0
     files = Hash.new
+    strs = Hash.new
 
-    opts['stats'].each do |str, entry|
-      strs += 1
+    stats = opts['stats']
+    stats.each do |str, entry|
+      unique += 1
       multi += 1 if str =~ /\x00/
       entry.each do |path, cnt|
         inst += (cnt['M'] + cnt['U'])
@@ -211,12 +214,44 @@ module RXStrings
         end
         files[path]['M'] += cnt['M']
         files[path]['U'] += cnt['U']
+        if strs[str].nil?
+          strs[str] = Hash.new
+          strs[str]['M'] = 0
+          strs[str]['U'] = 0
+          strs[str]['F'] = Hash.new
+        end
+        strs[str]['M'] += cnt['M']
+        strs[str]['U'] += cnt['U']
+        strs[str]['F'][path] = path
+      end
+    end
+
+    if opts['string-stats']
+      byinst = lambda do |x, y|
+        (strs[x]['M'] + strs[x]['U']) <=> (strs[y]['M'] + strs[y]['U'])
+      end
+      strs.keys.sort(&byinst).each do |str|
+        icnt = (strs[str]['M'] + strs[str]['U'])
+        fcnt = strs[str]['F'].size()
+        opts['out'].("#{icnt} instances, #{fcnt} files: #{str}")
+      end
+    end
+
+    if opts['file-stats']
+      byinst = lambda do |x, y|
+        (files[x]['M'] + files[x]['U']) <=> (files[y]['M'] + files[y]['U'])
+      end
+      files.keys.sort(&byinst).each do |path| 
+        icnt = (files[path]['M'] + files[path]['U'])
+        ucnt = files[path]['U']
+        opts['out'].("#{path}: #{icnt} strings (#{ucnt} unmarked)")
       end
     end
 
     opts['out'].("#{inst} strings (#{umark} unmarked)" +
-                 ", #{strs} unique strings (#{multi} multi-part)" +
+                 ", #{unique} unique strings (#{multi} multi-part)" +
                  ", #{files.size} files")
+    
 
     return umark
   end
@@ -243,8 +278,12 @@ while ARGV[0] =~ /^-/
     opts['umark'] = true
   when /^(-m|--mark)$/
     opts['mark'] = true
-  when /^(-s|--show)$/
-    opts['show'] = true
+  when /^(-a|--all)$/
+    opts['all'] = true
+  when /^(-f|--file-stats)$/
+    opts['file-stats'] = true
+  when /^(-s|--string-stats)$/
+    opts['string-stats'] = true
   when /^(-d|--debug)$/
     opts['debug'] = true
     opts['out'] = lambda {|msg| puts msg}
@@ -254,11 +293,13 @@ while ARGV[0] =~ /^-/
     end
     puts "Usage: #{ME} [OPTIONS] [FILE ...] [DIRECTORY ...]"
     puts " Options:"
-    puts "  -u|--umark  Show unmarked strings."
-    puts "  -m|--mark   Show marked strings."
-    puts "  -s|--show   Show all strings."
-    puts "  -d|--debug  Show parse tree."
-    puts "  -h|--help   Show help text."
+    puts "  -u|--umark         Show unmarked strings"
+    puts "  -m|--mark          Show marked strings"
+    puts "  -a|--all           Show all strings"
+    puts "  -f|--file-stats    Show per-file statistics"
+    puts "  -s|--string-stats  Show per-string statistics"
+    puts "  -d|--debug         Show parse tree"
+    puts "  -h|--help          Show help text"
     exit 1
   end
 end
