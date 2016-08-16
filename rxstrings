@@ -1,0 +1,269 @@
+#!/usr/bin/env ruby
+# -*- mode: Ruby;-*-
+#
+# Usage: rxstrings [OPTIONS] [FILE ...] [DIRECTORY ...]
+#
+
+require 'parser/current'
+
+module RXStrings
+  #
+  # Extract innermost node contents
+  #
+  def self.get_inner(node)
+    while node.class.to_s == 'Parser::AST::Node'
+      childcnt = node.children.size
+      child0 = node.children[0]
+      if childcnt != 1
+        child0 = nil
+        node.children.each do |child|
+          if child.class.to_s == 'NilClass'
+            childcnt -= 1
+          elsif child0.nil?
+            child0 = child
+          end
+        end
+        break if childcnt != 1
+      end
+      node = child0
+    end
+    return (node.class.to_s != 'NilClass') ? node:nil
+  end
+  private_class_method :get_inner
+
+  #
+  # Extract and flatten multi-segment strings
+  #
+  def self.get_str(node)
+    if node.class.to_s == 'Parser::AST::Node'
+      str = nil
+      nl = false
+      nstr = false
+      node.children.each do |child|
+        child = get_inner(child)
+        case child.class.to_s
+        when 'String'
+          str = '' if str.nil?
+          str += child
+          nl = true if child =~ /\n$/
+        when 'NilClass'
+        else
+          break if str.nil?
+          str += "\x00"
+          nstr = true
+        end
+      end
+      return str if !str.nil? && (nl || nstr)
+    end
+    return node
+  end
+  private_class_method :get_str
+  
+  #
+  # Check/display string
+  #
+  def self.check_str(str, path, opts, op)
+    return if str !~ /[A-Za-z]/ # ignore non-text string
+    return if str == '(string)' # special case for parser peculiarity
+    return if op =~ /^(require|new)$/ # ignore require & new statements
+    
+    # determine if marked
+    marked = (op =~ /^([npsN]?_|n[ps]_)$/)
+    
+    stats = opts['stats']
+    if stats
+      # update statistics
+      entry = stats[str]
+      if entry.nil?
+        entry = Hash.new
+        stats[str] = entry
+      end
+      if entry[path].nil?
+        entry[path] = Hash.new
+        entry[path]['M'] = 0
+        entry[path]['U'] = 0
+      end
+      if marked
+        entry[path]['M'] += 1
+      else
+        entry[path]['U'] += 1
+      end
+    end
+
+    # convert to printable string
+    pstr = str.gsub(/\n/, '\n')
+    pstr.gsub!(/\x00/, '...')
+    if opts['umark']
+      opts['err'].("#{path}: unmarked string `#{pstr}'") unless marked
+    elsif opts['mark']
+      opts['out'].("#{path}: #{op}() marked string `#{pstr}'") if marked
+    elsif !stats
+      opts['out'].("#{path}:#{pstr}")
+    end
+  end
+  private_class_method :check_str
+
+  #
+  # Parse syntax tree
+  #
+  def self.parse_tree(node, path, opts)
+    op = nil
+    node.children.each do |child|
+      child = get_inner(child)
+      next if child.nil?
+      child = get_str(child)
+      case child.class.to_s
+      when 'Parser::AST::Node'
+        parse_tree(child, path, opts)
+      when 'Symbol'
+        op = child.to_s if op.nil?
+      when 'String'
+        check_str(child, path, opts, op)
+      end
+    end
+  end
+  private_class_method :parse_tree
+  
+  #
+  # Output syntax tree
+  #
+  def self.show_tree(node, opts, depth = 0)
+    indent = ' ' * depth
+    node.children.each do |child|
+      case child.class.to_s
+      when 'Parser::AST::Node'
+        opts['out'].("#{indent}Node")
+        show_tree(child, opts, depth + 1)
+      when 'String'
+        str = child.to_s.gsub(/\n/, '\n')
+        opts['out'].("#{indent}\"#{str}\"")
+      when 'Fixnum'
+        opts['out'].("#{indent}#{child.to_s}")
+      when 'Symbol'
+        opts['out'].("#{indent}:#{child.to_s}")
+      when 'NilClass'
+        opts['out'].("#{indent}#{child.class.to_s}")
+      else
+        opts['out'].("#{indent}#{child.class.to_s}(#{child.to_s})")
+      end
+    end
+  end
+  private_class_method :show_tree
+  
+  #
+  # Parse file
+  #
+  def self.parse(path, opts = {})
+    opts['out'] = lambda {|msg| puts "#{msg}"} unless opts['out']
+    opts['err'] = lambda {|msg| STDERR.puts "#{msg}"} unless opts['err']
+
+    if File.directory?(path)
+      Dir.foreach(path) do |f|
+        parse(File.join(path, f), opts) if f != '.' && f != '..'
+      end
+    elsif !File.file?(path)
+      raise "cannot open `#{path}'"
+    elsif path =~ /\.rb$/
+      opts['out'].("processing #{path}") if opts['debug']
+      txt = File.open(path, 'r').read
+      if txt.nil?
+        raise "cannot read `#{path}'"
+      else
+        tree = Parser::CurrentRuby.parse(txt)
+        if tree.class.to_s == 'Parser::AST::Node'
+          if opts['debug']
+            show_tree(tree, opts)
+          else
+            parse_tree(tree, path, opts)
+          end
+        elsif opts['debug']
+          raise "cannot parse `#{path}'"
+        end
+      end
+    end
+  end
+
+  #
+  # Output statistics
+  #
+  def self.stats(opts)
+    return 0 if !opts['stats']
+
+    inst = 0
+    umark = 0
+    strs = 0
+    multi = 0
+    files = Hash.new
+
+    opts['stats'].each do |str, entry|
+      strs += 1
+      multi += 1 if str =~ /\x00/
+      entry.each do |path, cnt|
+        inst += (cnt['M'] + cnt['U'])
+        umark += cnt['U']
+        if files[path].nil?
+          files[path] = Hash.new
+          files[path]['M'] = 0
+          files[path]['U'] = 0
+        end
+        files[path]['M'] += cnt['M']
+        files[path]['U'] += cnt['U']
+      end
+    end
+
+    opts['out'].("#{inst} instances (#{umark} unmarked), #{strs} strings (#{multi} multi), #{files.size} files")
+
+    return umark
+  end
+end
+
+#
+# Test driver
+#
+
+(ME = $0).gsub!(/.*\//, '')
+
+# Parse command line options
+opts = {
+  'out' => lambda {|msg| puts "#{ME}: #{msg}"},
+  'err' => lambda {|msg| STDERR.puts "#{ME}: #{msg}"},
+}
+while ARGV[0] =~ /^-/
+  opt = ARGV.shift
+  case opt
+  when '--'
+    break
+  when /^(-u|--umark)$/
+    opts['umark'] = true
+  when /^(-m|--mark)$/
+    opts['mark'] = true
+  when /^(-s|--stats)$/
+    opts['stats'] = Hash.new()
+  when /^(-d|--debug)$/
+    opts['debug'] = true
+    opts['out'] = lambda {|msg| puts msg}
+  else
+    if opt !~ /^(-h|--help)$/
+      STDERR.puts "#{ME}: unrecognized option `#{opt}'"
+    end
+    puts "Usage: #{ME} [OPTIONS] [FILE ...] [DIRECTORY ...]"
+    puts " Options:"
+    puts "  -u|--umark  Show unmarked strings."
+    puts "  -m|--mark   Show marked strings."
+    puts "  -s|--stats  Show string statistics."
+    puts "  -d|--debug  Show parse tree."
+    puts "  -h|--help   Show help text."
+    exit 1
+  end
+end
+
+# Parse files & display output
+ARGV.each do |path|
+  begin
+    RXStrings::parse(path, opts)
+  rescue => err
+    STDERR.puts "#{ME}: #{err}", err.backtrace
+    exit 1
+  end
+end
+exit RXStrings::stats(opts) ? 1:0
