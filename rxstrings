@@ -8,6 +8,19 @@ require 'parser/current'
 
 module RXStrings
   #
+  # Replace non-printable characters.
+  # @return Printable string
+  #
+  def self.convert_str(str)
+    str = str.gsub(/\x00/, '...')
+    str.gsub!(/\n/, '\n')
+    str.gsub!(/\r/, '\r')
+    str.gsub!(/[^[:print:]]/) {|ch| '\x%02d' % ch.ord}
+    return str
+  end
+  private_class_method :convert_str
+
+  #
   # Extract innermost node contents.
   # @return Node or nil value.
   #
@@ -65,6 +78,12 @@ module RXStrings
   # Check/output string.
   #
   def self.check_str(str, path, opts, op)
+    # convert to printable string
+    pstr = convert_str(str)
+
+    # check ignore file
+    return if !opts['ignore'][pstr].nil?
+
     # heuristics to ignore non-user-visible strings
     return if str !~ /[A-Za-z]/ # ignore non-text string
     return if str == '(string)' # special case for parser peculiarity
@@ -93,9 +112,6 @@ module RXStrings
       end
     end
 
-    # convert to printable string
-    pstr = str.gsub(/\n/, '\n')
-    pstr.gsub!(/\x00/, '...')
     if opts['umark']
       opts['err'].("#{path}: unmarked string `#{pstr}'") unless marked
     elsif opts['mark']
@@ -164,11 +180,9 @@ module RXStrings
       Dir.foreach(path) do |f|
         parse(File.join(path, f), opts) if f != '.' && f != '..'
       end
-    elsif !File.file?(path)
-      raise "cannot open `#{path}'"
-    elsif path =~ /\.rb$/
+    elsif (File.file?(path) && path =~ /\.rb$/) || path == '-'
       opts['out'].("processing #{path}") if opts['debug']
-      txt = File.open(path, 'r').read
+      txt = (path == '-' ? STDIN.read():File.open(path, 'r').read())
       if txt.nil?
         raise "cannot read `#{path}'"
       else
@@ -183,6 +197,8 @@ module RXStrings
           raise "cannot parse `#{path}'"
         end
       end
+    elsif path =~ /\.rb$/
+      raise "cannot open `#{path}'"
     end
   end
 
@@ -233,7 +249,8 @@ module RXStrings
       strs.keys.sort(&byinst).each do |str|
         icnt = (strs[str]['M'] + strs[str]['U'])
         fcnt = strs[str]['F'].size()
-        opts['out'].("#{icnt} instances, #{fcnt} files: #{str}")
+        pstr = convert_str(str)
+        opts['out'].("#{icnt} instances, #{fcnt} files: #{pstr}")
       end
     end
 
@@ -251,7 +268,6 @@ module RXStrings
     opts['out'].("#{inst} strings (#{umark} unmarked)" +
                  ", #{unique} unique strings (#{multi} multi-part)" +
                  ", #{files.size} files")
-    
 
     return umark
   end
@@ -268,6 +284,7 @@ opts = {
   'out' => lambda {|msg| puts "#{ME}: #{msg}"},
   'err' => lambda {|msg| STDERR.puts "#{ME}: #{msg}"},
   'stats' => Hash.new,
+  'ignore' => Hash.new,
 }
 while ARGV[0] =~ /^-/
   opt = ARGV.shift
@@ -284,6 +301,17 @@ while ARGV[0] =~ /^-/
     opts['file-stats'] = true
   when /^(-s|--string-stats)$/
     opts['string-stats'] = true
+  when /^(-i|--ignore)=(.+)$/
+    begin
+      File.open($2, "r").each_line do |str|
+        next if str =~ /^\s*#/
+        str.chomp!
+        opts['ignore'][str] = 1
+      end
+    rescue => err
+      STDERR.puts "#{ME}: #{err}", err.backtrace
+      exit 1
+    end
   when /^(-d|--debug)$/
     opts['debug'] = true
     opts['out'] = lambda {|msg| puts msg}
@@ -298,6 +326,7 @@ while ARGV[0] =~ /^-/
     puts "  -a|--all           Show all strings"
     puts "  -f|--file-stats    Show per-file statistics"
     puts "  -s|--string-stats  Show per-string statistics"
+    puts "  -i|--ignore=FILE   Use ignore file"
     puts "  -d|--debug         Show parse tree"
     puts "  -h|--help          Show help text"
     exit 1
