@@ -77,7 +77,7 @@ module RXStrings
   #
   # Check/output string.
   #
-  def self.check_str(str, path, opts, op)
+  def self.check_str(str, path, opts, op0, op1)
     # convert to printable string
     pstr = convert_str(str)
 
@@ -87,11 +87,16 @@ module RXStrings
     # heuristics to ignore non-user-visible strings
     return if str !~ /[A-Za-z]/ # ignore non-text string
     return if str == '(string)' # special case for parser peculiarity
-    return if op =~ /^(require|new)$/ # ignore require & new statements
-    
+    return if str =~ /^(true|false|yes|no)$/ # ignore boolean values
+    return if str =~ /^\// # ignore filesystem paths
+    return if str =~ /(\\d|\\w|\^|\$)/ # ignore regular expressions
+    return if op0 == 'require' # ignore require statements
+    return if op1 =~ /^(\[\]=?)$/ # ignore hash keys
+    return if op1 =~ /^(==|!=|=~)$/ # ignore comparison RHS
+
     # determine if marked
-    marked = (op =~ /^([npsN]?_|n[ps]_)$/)
-    
+    marked = (op0 =~ /^([npsN]?_|n[ps]_)$/)
+
     stats = opts['stats']
     if stats
       # update statistics
@@ -117,7 +122,7 @@ module RXStrings
     elsif opts['mark']
       opts['out'].("#{path}: #{pstr}") if marked
     elsif opts['all']
-      opts['out'].("#{path}:#{pstr}")
+      opts['out'].("#{path}:#{pstr} (#{op0}:#{op1})")
     end
   end
   private_class_method :check_str
@@ -126,7 +131,8 @@ module RXStrings
   # Parse syntax tree.
   #
   def self.parse_tree(node, path, opts)
-    op = nil
+    op0 = nil
+    op1 = nil
     node.children.each do |child|
       child = get_inner(child)
       next if child.nil?
@@ -135,9 +141,10 @@ module RXStrings
       when 'Parser::AST::Node'
         parse_tree(child, path, opts)
       when 'Symbol'
-        op = child.to_s if op.nil?
+        op0 = child.to_s if op0.nil?
+        op1 = child.to_s
       when 'String'
-        check_str(child, path, opts, op)
+        check_str(child, path, opts, op0, op1)
       end
     end
   end
