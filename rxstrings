@@ -73,7 +73,7 @@ module RXStrings
     return node
   end
   private_class_method :get_str
-  
+
   #
   # Check/output string.
   #
@@ -149,7 +149,7 @@ module RXStrings
     end
   end
   private_class_method :parse_tree
-  
+
   #
   # Output syntax tree.
   #
@@ -175,7 +175,7 @@ module RXStrings
     end
   end
   private_class_method :show_tree
-  
+
   #
   # Parse file.
   #
@@ -225,6 +225,7 @@ module RXStrings
 
     stats = opts['stats']
     stats.each do |str, entry|
+      puts str
       unique += 1
       multi += 1 if str =~ /\x00/
       entry.each do |path, cnt|
@@ -265,7 +266,7 @@ module RXStrings
       byinst = lambda do |x, y|
         (files[x]['M'] + files[x]['U']) <=> (files[y]['M'] + files[y]['U'])
       end
-      files.keys.sort(&byinst).each do |path| 
+      files.keys.sort(&byinst).each do |path|
         icnt = (files[path]['M'] + files[path]['U'])
         ucnt = files[path]['U']
         opts['out'].("#{path}: #{icnt} strings (#{ucnt} unmarked)")
