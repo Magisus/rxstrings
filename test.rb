@@ -1,6 +1,10 @@
-cat = <<-EOM
+require 'parser/current'
+
+cat = _(<<-EOM)
 cat
 EOM
-puts "a #{cat}"
-puts "a cat"
+puts _("a #{cat}")
+puts _("a cat")
+options = {}
+options['key']
 
