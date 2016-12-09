@@ -11,3 +11,9 @@ Usage: `rxstrings` [OPTIONS] [FILE ...] [DIRECTORY ...]
 * -s|--string-stats  Show per-string statistics
 * -d|--debug         Show parse tree
 * -h|--help          Show help text
+
+# parser_experiment
+
+Run with `ruby-rewrite --load parser_experiment.rb <file_to_mark>`.
+
+For more info on the parser/rewriter, see <https://github.com/whitequark/parser>.
