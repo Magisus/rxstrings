@@ -16,13 +16,16 @@ class ParserExperiment < Parser::Rewriter
 
   def on_send(node)
     method_name = node.loc.selector.source
-    puts method_name
     if ((method_name == 'require') ||
       (method_name == "_") ||
       (/\[.*\]/.match method_name))
       return
     end
     super
+  end
+
+  def on_regexp(node)
+    return
   end
 end
 

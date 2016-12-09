@@ -7,4 +7,4 @@ puts _("a #{cat}")
 puts _("a cat")
 options = {}
 options['key']
-
+regex = /^(.+)\[/
